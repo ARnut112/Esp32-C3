@@ -6,66 +6,56 @@
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_RESET    -1
-#define SCREEN_ADDRESS 0x3C // I2C Address ปกติของ OLED 0.96" (บางรุ่นเป็น 0x3D)
+#define SCREEN_ADDRESS 0x3C // Address ที่สแกนเจอ
 
-// กำหนดขา I2C สำหรับ ESP32-C3 Super Mini
 #define SDA_PIN 5
 #define SCL_PIN 6
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-int counter = 0;
+int count = 0;
 
 void setup() {
   Serial.begin(115200);
   delay(2000);
 
-  // กำหนดขา I2C ก่อนเรียกใช้งานจอ
+  // เริ่มต้น I2C บนขา GPIO5 และ GPIO6
   Wire.begin(SDA_PIN, SCL_PIN);
 
-  // เริ่มต้นใช้งานจอ OLED
   if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-    Serial.println(F("[ERROR] OLED SSD1306 allocation failed!"));
-    for (;;); // วนลูปค้างไว้หากหาจอไม่พบ
+    Serial.println(F("OLED Allocation Failed"));
+    for (;;);
   }
 
-  Serial.println(F("[SUCCESS] OLED Initialized!"));
-
-  // เคลียร์หน้าจอ และแสดงโลโก้เริ่มต้น
   display.clearDisplay();
-  display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-  
-  // วาดเส้นกรอบหน้าจอ
-  display.drawRect(0, 0, 128, 64, SSD1306_WHITE);
-  
-  // พิมพ์ข้อความต้อนรับ
-  display.setCursor(10, 12);
-  display.println("ESP32-C3 SuperMini");
-  display.setCursor(20, 28);
-  display.println("OLED 0.96\" Test");
-  display.display();
-  delay(2000);
 }
 
 void loop() {
   display.clearDisplay();
-  
-  // วาดกรอบด้านนอก
-  display.drawRect(0, 0, 128, 64, SSD1306_WHITE);
-  
-  // หัวข้อ
+
+  // 1. วาดแถบ Header ด้านบน
+  display.fillRect(0, 0, 128, 14, SSD1306_WHITE);
+  display.setTextColor(SSD1306_BLACK);
   display.setTextSize(1);
-  display.setCursor(15, 10);
-  display.println("--- STATUS OK ---");
-  
-  // แสดงตัวนับเวลา (Counter)
-  display.setTextSize(2);
-  display.setCursor(25, 30);
-  display.printf("SEC: %d", counter);
-  
+  display.setCursor(18, 3);
+  display.print("ESP32-C3 READY");
+
+  // 2. แสดงสถานะอุปกรณ์
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(4, 22);
+  display.print("I2C Address: 0x3C");
+
+  display.setCursor(4, 34);
+  display.print("Status: Connected");
+
+  // 3. วาด ProgressBar โหลดวิ่งด้านล่าง
+  int progress = (count * 10) % 120;
+  display.drawRect(4, 48, 120, 10, SSD1306_WHITE);
+  display.fillRect(6, 50, progress, 6, SSD1306_WHITE);
+
   display.display();
-  
-  counter++;
-  delay(1000);
+
+  count++;
+  delay(200);
 }
