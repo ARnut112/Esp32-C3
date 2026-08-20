@@ -4,8 +4,8 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-const char* ssid     = "Kai 2.4G";
-const char* password = "0631573754"; // เปลี่ยนเป็นรหัสผ่านของคุณ
+const char* ssid     = "ar_nut";
+const char* password = "YOUR_WIFI_PASSWORD";
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -14,35 +14,86 @@ const char* password = "0631573754"; // เปลี่ยนเป็นรห�
 
 #define SDA_PIN 5
 #define SCL_PIN 6
+#define BUTTON_PIN 4 // ขาต่อปุ่มกด Tactile Switch
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-// ฟังก์ชันวาดไอคอนความแรงสัญญาณ Wi-Fi (4 ขีด)
-void drawWiFiIcon(int x, int y, int rssi) {
-  int bars = 0;
-  if (rssi >= -55)      bars = 4; // สัญญาณดีมาก
-  else if (rssi >= -65) bars = 3; // สัญญาณดี
-  else if (rssi >= -75) bars = 2; // สัญญาณปานกลาง
-  else if (rssi >= -85) bars = 1; // สัญญาณอ่อน
-  else                  bars = 0; // ไม่มีสัญญาณ
+// ตัวแปรจัดการหน้าจอ และระบบ Debounce ปุ่มกด
+int currentPage = 0;
+const int TOTAL_PAGES = 3;
 
-  // วาดขีด 4 ขีดที่มุมขวาบน
-  for (int i = 0; i < 4; i++) {
-    int barHeight = (i + 1) * 3; // ขีดสูงขึ้นทีละ 3px (3, 6, 9, 12px)
-    int barX = x + (i * 4);      // แต่ละขีดเว้นระยะ 4px
-    int barY = y + (12 - barHeight);
+bool lastButtonState = HIGH;
+bool currentButtonState = HIGH;
+unsigned long lastDebounceTime = 0;
+const unsigned long debounceDelay = 50; // หน่วงเวลาเช็กปุ่มกด 50ms
 
-    if (i < bars) {
-      display.fillRect(barX, barY, 2, barHeight, SSD1306_WHITE); // ขีดติด
-    } else {
-      display.drawRect(barX, barY, 2, barHeight, SSD1306_WHITE); // ขีดโปร่ง
-    }
+// --- ฟังก์ชันวาดหน้าจอแต่ละหน้า ---
+void drawPage0() {
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("PAGE 1: SYSTEM INFO");
+  display.drawFastHLine(0, 12, 128, SSD1306_WHITE);
+
+  display.setCursor(0, 22);
+  display.println("Device: ESP32-C3");
+  display.setCursor(0, 36);
+  display.println("Status: Active");
+  display.setCursor(0, 50);
+  display.println("[Press button -> Next]");
+}
+
+void drawPage1() {
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("PAGE 2: WI-FI STATUS");
+  display.drawFastHLine(0, 12, 128, SSD1306_WHITE);
+
+  if (WiFi.status() == WL_CONNECTED) {
+    display.setCursor(0, 20);
+    display.print("SSID: "); display.println(ssid);
+    display.setCursor(0, 32);
+    display.print("IP: "); display.println(WiFi.localIP());
+    display.setCursor(0, 44);
+    display.printf("RSSI: %d dBm", WiFi.RSSI());
+  } else {
+    display.setCursor(0, 30);
+    display.println("Wi-Fi: Disconnected");
   }
+}
+
+void drawPage2() {
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("PAGE 3: CONTROL MENU");
+  display.drawFastHLine(0, 12, 128, SSD1306_WHITE);
+
+  display.setCursor(0, 22);
+  display.println("> [1] Relay 1: OFF");
+  display.setCursor(0, 36);
+  display.println("  [2] Relay 2: OFF");
+  display.setCursor(0, 50);
+  display.println("  [3] Home Assistant");
+}
+
+void renderCurrentPage() {
+  display.clearDisplay();
+  switch (currentPage) {
+    case 0: drawPage0(); break;
+    case 1: drawPage1(); break;
+    case 2: drawPage2(); break;
+  }
+  display.display();
 }
 
 void setup() {
   Serial.begin(115200);
   delay(2000);
+
+  // ตั้งค่าขาปุ่มกดแบบ INPUT_PULLUP (กด = LOW, ไม่กด = HIGH)
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
 
   Wire.begin(SDA_PIN, SCL_PIN);
   if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
@@ -50,18 +101,7 @@ void setup() {
     for (;;);
   }
 
-  // หน้าจอระหว่างรอเชื่อมต่อ
-  display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE);
-  display.setTextSize(1);
-  display.setCursor(0, 15);
-  display.println("Connecting Wi-Fi...");
-  display.setCursor(0, 30);
-  display.print("SSID: ");
-  display.println(ssid);
-  display.display();
-
-  // ตั้งค่า Wi-Fi เพื่อความเสถียรของ ESP32-C3 Super Mini
+  // ตั้งค่า Wi-Fi เพื่อความเสถียร
   WiFi.persistent(false);
   WiFi.disconnect(true, true);
   delay(1000);
@@ -69,51 +109,31 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
   WiFi.setTxPower(WIFI_POWER_11dBm);
-
   WiFi.begin(ssid, password);
 
-  int timeout = 0;
-  while (WiFi.status() != WL_CONNECTED && timeout < 40) {
-    delay(500);
-    timeout++;
-  }
+  renderCurrentPage();
 }
 
 void loop() {
-  display.clearDisplay();
+  // อ่านค่าปุ่มกดและตัดสัญญาณรบกวน (Debounce)
+  bool reading = digitalRead(BUTTON_PIN);
 
-  // 1. แถบ Header: ชื่อ SSID และไอคอน Wi-Fi ที่มุมขวาบน
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 2);
-  display.print(ssid);
-
-  if (WiFi.status() == WL_CONNECTED) {
-    int rssi = WiFi.RSSI();
-
-    // วาดไอคอน Wi-Fi ที่พิกัด X=110, Y=0
-    drawWiFiIcon(110, 0, rssi);
-
-    // เส้นขีดแบ่งโซน
-    display.drawFastHLine(0, 16, 128, SSD1306_WHITE);
-
-    // 2. แสดง IP Address
-    display.setCursor(0, 24);
-    display.print("IP Address:");
-    display.setCursor(0, 36);
-    display.print(WiFi.localIP().toString());
-
-    // 3. แสดงค่า RSSI เป็น dBm
-    display.setCursor(0, 52);
-    display.printf("Signal: %d dBm", rssi);
-
-  } else {
-    // หากสัญญาณหลุด
-    display.drawFastHLine(0, 16, 128, SSD1306_WHITE);
-    display.setCursor(0, 32);
-    display.print("Status: Disconnected");
+  if (reading != lastButtonState) {
+    lastDebounceTime = millis();
   }
 
-  display.display();
-  delay(2000); // อัปเดตสถานะและระดับสัญญาณทุกๆ 2 วินาที
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    if (reading != currentButtonState) {
+      currentButtonState = reading;
+
+      // ตรวจพบจังหวะ "กดปุ่ม" (Transition จาก HIGH ไป LOW)
+      if (currentButtonState == LOW) {
+        currentPage = (currentPage + 1) % TOTAL_PAGES; // สลับหน้า 0 -> 1 -> 2 -> 0
+        renderCurrentPage();
+        Serial.printf("Switched to Page: %d\n", currentPage + 1);
+      }
+    }
+  }
+
+  lastButtonState = reading;
 }
